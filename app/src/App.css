@@ -2415,10 +2415,17 @@ button.danger:hover:not(:disabled) {
   background: var(--surface-alt);
   padding: 0.8rem;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.75rem;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-x: none;
+}
+
+.timeline-editor > * {
+  min-width: 0;
 }
 
 .timeline-editor.is-empty {
@@ -2660,6 +2667,12 @@ button.danger:hover:not(:disabled) {
   width: 100%;
 }
 
+.timeline-editor select {
+  /* WebKit can otherwise count long option labels as overflow outside the select. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .timeline-entry-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2734,6 +2747,7 @@ button.danger:hover:not(:disabled) {
   padding-top: 0.7rem;
   font-size: 0.85rem;
   color: var(--ink-soft);
+  overflow-wrap: anywhere;
 }
 
 .entry-source-timer > span {

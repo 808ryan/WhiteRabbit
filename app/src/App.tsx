@@ -2159,9 +2159,17 @@ function App() {
     return engagement?.activities ?? []
   }, [engagements, entryDraft])
 
-  const activeTimerAvailableEngagements = useMemo(
-    () => engagements.filter((engagement) => engagement.activities.length > 0),
+  const activeEngagements = useMemo(
+    () => engagements.filter((engagement) => engagement.isActive),
     [engagements],
+  )
+  const entryDraftEngagement = entryDraft ? engagementById.get(entryDraft.engagementId) : undefined
+  const activeTimerDraftEngagement = activeTimerDraft
+    ? engagementById.get(activeTimerDraft.engagementId)
+    : undefined
+  const activeTimerAvailableEngagements = useMemo(
+    () => activeEngagements.filter((engagement) => engagement.activities.length > 0),
+    [activeEngagements],
   )
   const activeTimerAvailableActivities = useMemo(() => {
     if (!activeTimerDraft?.engagementId) {
@@ -8521,6 +8529,11 @@ function App() {
             }}
             disabled={isBusy}
           >
+            {activeTimerDraftEngagement && !activeTimerDraftEngagement.isActive ? (
+              <option value={activeTimerDraftEngagement.id} disabled hidden>
+                {formatEntityDisplayLabel(activeTimerDraftEngagement.name, activeTimerDraftEngagement.code)} (inactive)
+              </option>
+            ) : null}
             {activeTimerAvailableEngagements.map((engagement) => (
               <option key={engagement.id} value={engagement.id}>
                 {formatEntityDisplayLabel(engagement.name, engagement.code)}
@@ -8714,7 +8727,12 @@ function App() {
                 }
               >
                 <option value="">Uncategorized</option>
-                {engagements.map((engagement) => (
+                {entryDraftEngagement && !entryDraftEngagement.isActive ? (
+                  <option value={entryDraftEngagement.id} disabled hidden>
+                    {formatEntityDisplayLabel(entryDraftEngagement.name, entryDraftEngagement.code)} (inactive)
+                  </option>
+                ) : null}
+                {activeEngagements.map((engagement) => (
                   <option key={engagement.id} value={engagement.id}>
                     {formatEntityDisplayLabel(engagement.name, engagement.code)}
                   </option>

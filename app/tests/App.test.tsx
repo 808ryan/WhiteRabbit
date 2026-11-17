@@ -8,7 +8,7 @@ import App from '../src/App'
 import * as api from '../src/lib/api'
 import { buildDefaultReportingState } from '../src/lib/reporting'
 import { buildDefaultSummaryLayoutState } from '../src/lib/summaryLayout'
-import type { Engagement, TimelineEntry, TimelineWeekView } from '../src/lib/types'
+import type { ActiveTimer, Engagement, TimelineEntry, TimelineWeekView } from '../src/lib/types'
 
 vi.mock('../src/lib/api', async (importOriginal) => {
   const original = await importOriginal<typeof api>()
@@ -254,6 +254,104 @@ async function selectView(label: string) {
     .find((button) => button.textContent === label)!
   await act(async () => tab.click())
 }
+
+describe('timeline editor engagement choices', () => {
+  function engagement(id: string, isActive = true): Engagement {
+    return {
+      id, name: `${id} engagement`, code: `EXAMPLE-${id}`, client: null,
+      engagementType: 'external', colorHex: null, tags: [], describeWhenToUse: null,
+      isActive, createdAt: 0, updatedAt: 0,
+      activities: [{
+        id: `${id}-activity`, engagementId: id, name: 'Example activity', code: 'A01',
+        colorHex: null, tags: [], describeWhenToUse: null, isActive: true,
+        createdAt: 0, updatedAt: 0,
+      }],
+    }
+  }
+
+  function selectableEngagementIds(select: HTMLSelectElement) {
+    return [...select.options].filter((option) => !option.disabled && !option.hidden)
+      .map((option) => option.value)
+  }
+
+  it.each(['Timeline', 'Week'])('excludes inactive engagements when editing an existing block in %s', async (view) => {
+    vi.mocked(api.engagementList).mockResolvedValue([
+      engagement('active'), engagement('inactive', false), engagement('other-active'),
+    ])
+    await render()
+    if (view === 'Week') await selectView(view)
+    await act(async () => container.querySelector<HTMLButtonElement>('.timeline-block')!.click())
+    const select = container.querySelector<HTMLSelectElement>('.timeline-editor select')!
+    expect(selectableEngagementIds(select)).toEqual(['', 'active', 'other-active'])
+    expect(select.querySelector('[value="inactive"]')).toBeNull()
+  })
+
+  it('preserves an archived assignment when editing a description, without offering it as a choice', async () => {
+    const archived = engagement('archived', false)
+    vi.mocked(api.engagementList).mockResolvedValue([archived, engagement('active')])
+    const historicalEntry = {
+      ...entry('2026-09-19'), engagementId: archived.id, activityId: archived.activities[0].id,
+      engagementName: archived.name, engagementCode: archived.code, engagementType: archived.engagementType,
+      activityName: archived.activities[0].name, activityCode: archived.activities[0].code,
+    }
+    vi.mocked(api.timelineListForDate).mockResolvedValue([historicalEntry])
+    vi.mocked(api.timelineUpdateEntry).mockResolvedValue(undefined)
+    await render()
+    await act(async () => container.querySelector<HTMLButtonElement>('.timeline-block')!.click())
+    const select = container.querySelector<HTMLSelectElement>('.timeline-editor select')!
+    expect(select.value).toBe('archived')
+    expect(select.selectedOptions[0].textContent).toContain('(inactive)')
+    expect(select.selectedOptions[0].disabled).toBe(true)
+    expect(select.selectedOptions[0].hidden).toBe(true)
+    expect(selectableEngagementIds(select)).toEqual(['', 'active'])
+    expect(api.timelineUpdateEntry).not.toHaveBeenCalled()
+
+    const description = container.querySelector<HTMLTextAreaElement>('[aria-label="Entry description"]')!
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
+    await act(async () => {
+      setValue.call(description, 'Updated historical note')
+      description.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => { await vi.advanceTimersByTimeAsync(700) })
+    expect(api.timelineUpdateEntry).toHaveBeenCalledWith(expect.objectContaining({
+      id: historicalEntry.id, engagementId: archived.id,
+      activityId: archived.activities[0].id, description: 'Updated historical note',
+    }))
+
+    await act(async () => {
+      select.value = 'active'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(select.value).toBe('active')
+    expect(select.querySelector('[value="archived"]')).toBeNull()
+  })
+
+  it.each([true, false])('offers only active engagements for a live timer with an active current assignment: %s', async (isActive) => {
+    const current = engagement('current', isActive)
+    vi.mocked(api.engagementList).mockResolvedValue([
+      current, engagement('other-inactive', false), engagement('other-active'),
+    ])
+    const timer: ActiveTimer = {
+      engagementId: current.id, activityId: current.activities[0].id,
+      engagementCode: current.code, engagementName: current.name, engagementColorHex: null,
+      activityCode: current.activities[0].code, activityName: current.activities[0].name,
+      activityColorHex: null, startDate: '2026-09-19', startMinute: 480,
+      startedAt: new Date(2026, 8, 19, 8).getTime(), description: 'Example timer',
+    }
+    vi.mocked(api.timerGetActive).mockResolvedValue(timer)
+    await render()
+    await act(async () => container.querySelector<HTMLButtonElement>('.active-timer-preview')!.click())
+    const select = container.querySelector<HTMLSelectElement>('.live-timer-editor select')!
+    expect(select.value).toBe(current.id)
+    expect(selectableEngagementIds(select)).toEqual(isActive ? ['current', 'other-active'] : ['other-active'])
+    expect(select.querySelector('[value="other-inactive"]')).toBeNull()
+    if (!isActive) {
+      expect(select.selectedOptions[0].disabled).toBe(true)
+      expect(select.selectedOptions[0].hidden).toBe(true)
+    }
+    expect(api.timerUpdateActive).not.toHaveBeenCalled()
+  })
+})
 
 describe('ad hoc timeline entries', () => {
   it.each(['click', 'submit'])('inserts an entry via %s, saves without an activity, and focuses the text field', async (method) => {
